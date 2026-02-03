@@ -101,7 +101,7 @@ export default function App() {
     <div className="min-h-screen bg-black text-white">
       <header className="p-8 border-b border-zinc-900 text-center">
         <div className="flex items-center justify-center gap-4">
-          <h1 className="text-[36px] font-bold tracking-tight">AI Fashion / Detailed Mix</h1>
+          <h1 className="text-[36px] font-bold tracking-tight">AI Fashion / Item Mix</h1>
           <div className="bg-[#5456f3] px-3 py-1 rounded-lg flex items-center justify-center">
             <span className="text-white text-[12px] font-black uppercase tracking-normal">PRO</span>
           </div>

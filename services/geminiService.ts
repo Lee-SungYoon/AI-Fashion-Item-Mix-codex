@@ -12,13 +12,13 @@ export async function analyzeImage(base64Data: string, type: string): Promise<st
   const mimeType = base64Data.split(';')[0].split(':')[1];
   const base64 = base64Data.split(',')[1];
 
-  const prompt = `Act as an expert fashion archivist. Provide an ultra-detailed technical description of this ${type} reference. 
-  Include: 
-  - Material textures (e.g., grain of leather, weave of silk, knit of wool).
-  - Exact color shades and patterns.
-  - Structural fit and tailoring details.
-  - Distinctive hardware or branding elements.
-  If it's a face/person: describe the facial structure, skin tone, hair texture, and subtle expression.`;
+  const prompt = `Act as a world-class fashion analyst. Provide an ultra-detailed technical description of this ${type} reference. 
+  
+  If type is 'pose': Focus exclusively on the body's skeletal alignment, limb positioning, weight distribution, and the specific angle of the torso and shoulders.
+  If type is 'face': Focus on facial geometry, eye shape, skin texture, specific hair styling, and the exact emotional micro-expression.
+  If type is 'clothing': Focus on the material properties, weave, specific color values, hardware, and how the garment hangs.
+  
+  Be technical and precise.`;
 
   const response: GenerateContentResponse = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
@@ -30,7 +30,7 @@ export async function analyzeImage(base64Data: string, type: string): Promise<st
 }
 
 /**
- * Stage 1: Deep analysis of user intent and reference binding.
+ * Stage 1: Strategic Synthesis of Vision
  */
 async function synthesizeEditorialVision(params: {
   userPrompt: string;
@@ -41,23 +41,22 @@ async function synthesizeEditorialVision(params: {
   const ai = getAIClient();
   
   const analysisPrompt = `
-    Act as a World-Class Creative Director and Technical Prompt Engineer for High-End Fashion Editorial.
-    Your mission is to synthesize a "Master Execution Plan" that binds multiple image references into a single cohesive vision.
+    Act as a Master Fashion Creative Director. You are preparing a technical brief for a high-end 2K image synthesis engine.
+    Your goal is to perfectly blend identity, posture, and wardrobe into a single cinematic shot.
 
-    REFERENCE DNA:
-    - FACE/IDENTITY: ${params.faceDesc || 'Maintain exact identity and expression from face reference.'}
-    - POSE/STRUCTURE: ${params.poseDesc || 'Adopt the exact body posture and silhouette from pose reference.'}
-    - GARMENTS: ${params.clothingItems.map(c => `[${c.type}: ${c.description}]`).join('; ')}
-    
-    PRIMARY CREATIVE DIRECTION (USER INTENT): "${params.userPrompt || 'Minimalist high-fashion studio editorial.'}"
+    INPUT DATA:
+    1. TARGET IDENTITY (Face/Hair): ${params.faceDesc || 'Maintain exact features and expression from Face Reference.'}
+    2. TARGET STRUCTURE (Pose/Stance): ${params.poseDesc || 'Adopt the exact body geometry and skeletal pose from Pose Reference.'}
+    3. TARGET WARDROBE (Items): ${params.clothingItems.map(c => `[${c.type}: ${c.description}]`).join('; ')}
+    4. ARTISTIC CONTEXT (User Intent): "${params.userPrompt || 'Professional high-fashion studio editorial.'}"
 
-    INSTRUCTIONS FOR VISION SYNTHESIS:
-    1. ATMOSPHERE BINDING: Use the USER INTENT to define the environment, lighting (e.g., softbox, rim light, cinematic shadows), and camera specs (e.g., 85mm prime, f/1.8).
-    2. CLOTHING INTEGRATION: Describe how the clothing items are layered and how they interact with the light (e.g., "The silk top catches the side lighting to emphasize its sheen").
-    3. STRICT IDENTITY: Explicitly state that the model's face, hair, and pose must be a 1:1 reflection of the provided reference images.
-    4. COLOR HARMONY: Ensure the palette is sophisticated and respects the original garment colors unless the user requested a specific color grading.
-    
-    Return ONLY the final synthesized technical directive. No conversational filler.
+    INSTRUCTIONS FOR THE BRIEF:
+    - DECOUPLE & RECOMBINE: Explicitly instruct the engine to take ONLY the body pose from the Pose Reference and ONLY the facial identity from the Face Reference.
+    - MATERIAL FIDELITY: Describe how the specific clothing items interact with the body's stance (e.g., "The fabric of the ${params.clothingItems[0]?.type || 'garment'} should drape realistically according to the weight distribution of the pose").
+    - CINEMATIC LIGHTING: Based on the User Intent, define a lighting scheme (e.g., "Dramatic chiaroscuro", "High-key studio", "Golden hour rim lighting") that emphasizes the textures of the clothes and the contours of the pose.
+    - BACKGROUND & MOOD: Fully realize the environment requested in the User Intent.
+
+    Return ONLY the final consolidated technical prompt for image generation.
   `;
 
   const response = await ai.models.generateContent({
@@ -77,8 +76,8 @@ export async function generateMidjourneyPromptFromImage(imageUrl: string): Promi
   const mimeType = imageUrl.split(';')[0].split(':')[1];
   const base64 = imageUrl.split(',')[1];
 
-  const prompt = `Analyze this generated fashion image. Create a high-quality Midjourney V7 prompt that captures its essence. 
-  Include specific photographic terms, lighting, and textures. 
+  const prompt = `Analyze this generated fashion image. Create a high-quality Midjourney V7 prompt for it. 
+  Include photographic details, lighting, and textures. 
   Return as JSON: {"positive": "...", "negative": "..."}.`;
 
   const response: GenerateContentResponse = await ai.models.generateContent({
@@ -105,8 +104,7 @@ export async function generateFashionMix(params: {
 }): Promise<string> {
   const ai = getAIClient();
   
-  // Step 1: Deep Vision Synthesis
-  if (params.onStatusUpdate) params.onStatusUpdate("Synthesizing Style Intent...");
+  if (params.onStatusUpdate) params.onStatusUpdate("Deconstructing References...");
   const masterVision = await synthesizeEditorialVision({
     userPrompt: params.additionalPrompt,
     faceDesc: params.faceDesc,
@@ -114,29 +112,35 @@ export async function generateFashionMix(params: {
     clothingItems: params.clothingImages.map(c => ({ description: c.description, type: c.type }))
   });
 
-  // Step 2: High-Fidelity Generation (2.5 Pro Image for best quality & reference adherence)
-  if (params.onStatusUpdate) params.onStatusUpdate("Generating 2K Editorial...");
+  if (params.onStatusUpdate) params.onStatusUpdate("Synthesizing 2K Masterpiece...");
   
   const parts: any[] = [
     { text: `
-      URGENT SYSTEM DIRECTIVE: 
-      Generate a 2K fashion editorial image using the attached visual references with ABSOLUTE FIDELITY.
-      
-      1. FACE IDENTITY: You MUST reconstruct the exact face, features, hair, and expression from the FACE REFERENCE image.
-      2. POSE STRUCTURE: You MUST match the exact skeletal posture and body alignment of the POSE REFERENCE image.
-      3. GARMENT RECONSTRUCTION: Every clothing item provided in the parts must be rendered with its original texture, pattern, and color.
-      
-      SCENE EXECUTION PLAN: ${masterVision}
-      
-      Do not hallucinate new clothing or change the person's identity. Combine all elements into a professional, high-end editorial shot.
+      STRICT ARCHITECTURAL DIRECTIVE: 
+      You are generating a 2K resolution professional fashion editorial. 
+      You must follow these rules with absolute precision:
+
+      1. POSE ISOLATION: Analyze the 'Pose Reference' image. Extract the EXACT body skeletal structure, arm/leg positions, and torso angle. Apply this pose to the final model.
+      2. IDENTITY TRANSFER: Analyze the 'Face Reference' image. Reconstruct the EXACT facial features, skin tone, hair style, and expression onto the model.
+      3. CLOTHING RECONSTRUCTION: Render the attached 'Clothing' images onto the model. Maintain the original colors, patterns, and fabric textures described.
+      4. SCENE EXECUTION: ${masterVision}
+
+      The final output must look like a real, high-end photograph. Zero compromise on pose and face fidelity.
     ` }
   ];
 
-  // Add images in a logical order for the model
-  if (params.faceImage) parts.push({ inlineData: { mimeType: 'image/png', data: params.faceImage.split(',')[1] } });
-  if (params.poseImage) parts.push({ inlineData: { mimeType: 'image/png', data: params.poseImage.split(',')[1] } });
+  // Provide references with clear labels for the model
+  if (params.faceImage) {
+    parts.push({ text: "IDENTITY REFERENCE (Face/Hair):" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: params.faceImage.split(',')[1] } });
+  }
+  if (params.poseImage) {
+    parts.push({ text: "BODY STRUCTURE REFERENCE (Pose/Stance):" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: params.poseImage.split(',')[1] } });
+  }
   
-  params.clothingImages.forEach(img => {
+  params.clothingImages.forEach((img, index) => {
+    parts.push({ text: `CLOTHING ITEM ${index + 1} (${img.type}):` });
     parts.push({ inlineData: { mimeType: 'image/png', data: img.data.split(',')[1] } });
   });
 
@@ -151,10 +155,10 @@ export async function generateFashionMix(params: {
     }
   });
 
-  if (!response.candidates?.[0]?.content?.parts) throw new Error("Synthesis aborted by safety or logic error.");
+  if (!response.candidates?.[0]?.content?.parts) throw new Error("Generation failed - logic conflict or safety block.");
 
   for (const part of response.candidates[0].content.parts) {
     if (part.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
   }
-  throw new Error("Final generation failed to produce an image part.");
+  throw new Error("No image data returned from synthesis engine.");
 }
