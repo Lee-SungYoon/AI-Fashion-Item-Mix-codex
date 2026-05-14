@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, HarmCategory, HarmBlockThreshold } from "@google/genai";
 
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
@@ -7,10 +7,49 @@ const getAIClient = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+const DEFAULT_SAFETY_SETTINGS = [
+  {
+    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    threshold: HarmBlockThreshold.BLOCK_NONE,
+  },
+];
+
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    const errorMsg = error.message || "";
+    if (retries > 0 && (errorMsg.includes("429") || errorMsg.includes("RESOURCE_EXHAUSTED"))) {
+      console.log(`Quota hit, retrying in ${delay / 1000}s... (${retries} left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 1.5);
+    }
+    throw error;
+  }
+}
+
+function getImagePart(dataUrl: string) {
+  const parts = dataUrl.split(';');
+  const mimeType = parts[0].split(':')[1];
+  const data = dataUrl.split(',')[1];
+  return { inlineData: { mimeType, data } };
+}
+
 export async function analyzeImage(base64Data: string, type: string): Promise<string> {
   const ai = getAIClient();
-  const mimeType = base64Data.split(';')[0].split(':')[1];
-  const base64 = base64Data.split(',')[1];
+  const imagePart = getImagePart(base64Data);
 
   const prompt = `Act as a world-class fashion analyst. Provide an ultra-detailed technical description of this ${type} reference. 
   
@@ -20,13 +59,14 @@ export async function analyzeImage(base64Data: string, type: string): Promise<st
   
   Be technical and precise.`;
 
-  const response: GenerateContentResponse = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: { parts: [{ inlineData: { mimeType, data: base64 } }, { text: prompt }] },
-    config: { temperature: 0.1 }
+  return withRetry(async () => {
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: { parts: [imagePart, { text: prompt }] },
+      config: { temperature: 0.1, safetySettings: DEFAULT_SAFETY_SETTINGS }
+    });
+    return response.text || "No description.";
   });
-
-  return response.text || "No description.";
 }
 
 /**
@@ -59,35 +99,38 @@ async function synthesizeEditorialVision(params: {
     Return ONLY the final consolidated technical prompt for image generation.
   `;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: analysisPrompt,
-    config: { 
-      temperature: 0.7,
-      thinkingConfig: { thinkingBudget: 0 }
-    }
+  return withRetry(async () => {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: analysisPrompt,
+      config: { 
+        temperature: 0.7,
+        safetySettings: DEFAULT_SAFETY_SETTINGS
+      }
+    });
+    return response.text || params.userPrompt;
   });
-
-  return response.text || params.userPrompt;
 }
 
 export async function generateMidjourneyPromptFromImage(imageUrl: string): Promise<{ positive: string, negative: string }> {
   const ai = getAIClient();
-  const mimeType = imageUrl.split(';')[0].split(':')[1];
-  const base64 = imageUrl.split(',')[1];
+  const imagePart = getImagePart(imageUrl);
 
   const prompt = `Analyze this generated fashion image. Create a high-quality Midjourney V7 prompt for it. 
   Include photographic details, lighting, and textures. 
   Return as JSON: {"positive": "...", "negative": "..."}.`;
 
-  const response: GenerateContentResponse = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: { parts: [{ inlineData: { mimeType, data: base64 } }, { text: prompt }] },
-    config: { responseMimeType: "application/json", temperature: 0.7 }
+  const result = await withRetry(async () => {
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: { parts: [imagePart, { text: prompt }] },
+      config: { responseMimeType: "application/json", temperature: 0.7, safetySettings: DEFAULT_SAFETY_SETTINGS }
+    });
+    return response.text;
   });
 
   try {
-    return JSON.parse(response.text || '{}');
+    return JSON.parse(result || '{}');
   } catch (e) {
     return { positive: "High-end fashion editorial --ar 3:4 --v 7.0", negative: "distorted, low quality" };
   }
@@ -120,45 +163,56 @@ export async function generateFashionMix(params: {
       You are generating a 2K resolution professional fashion editorial. 
       You must follow these rules with absolute precision:
 
-      1. POSE ISOLATION: Analyze the 'Pose Reference' image. Extract the EXACT body skeletal structure, arm/leg positions, and torso angle. Apply this pose to the final model.
-      2. IDENTITY TRANSFER: Analyze the 'Face Reference' image. Reconstruct the EXACT facial features, skin tone, hair style, and expression onto the model.
-      3. CLOTHING RECONSTRUCTION: Render the attached 'Clothing' images onto the model. Maintain the original colors, patterns, and fabric textures described.
+      1. POSE & AESTHETIC FOUNDATION: Analyze the 'BODY STRUCTURE REFERENCE' image. This is your master reference for:
+         - EXACT body skeletal alignment, limb orientation, and torso angle.
+         - LIGHTING setup (direction, intensity, shadows).
+         - TONE & MOOD (color grading, grain, overall aesthetic atmosphere).
+         Apply this exact physical stance and lighting/tonal atmosphere to the final output.
+
+      2. IDENTITY INTEGRATION: Analyze the 'IDENTITY REFERENCE' image. Reconstruct the EXACT facial features, bone structure, skin tone, eye shape, and specific hair styling onto the model while maintaining the perspective and lighting derived from Rule 1.
+
+      3. CLOTHING RECONSTRUCTION & LAYERING: Render all attached 'CLOTHING ITEM' images (Outerwear, Tops, Bottoms, Shoes, Accessories) onto the model. 
+         - Ensure items are layered naturally (e.g., jackets over tops, tucked or untucked as appropriate).
+         - Maintain original colors, fabric textures, branding/hardware, and how the fabric flows on the specific pose body.
+      
       4. SCENE EXECUTION: ${masterVision}
 
-      The final output must look like a real, high-end photograph. Zero compromise on pose and face fidelity.
+      The final output must be photorealistic, high-end, and indistinguishable from a real fashion magazine shoot. Focus on perfection in face, pose, and lighting fidelity.
     ` }
   ];
 
   // Provide references with clear labels for the model
   if (params.faceImage) {
     parts.push({ text: "IDENTITY REFERENCE (Face/Hair):" });
-    parts.push({ inlineData: { mimeType: 'image/png', data: params.faceImage.split(',')[1] } });
+    parts.push(getImagePart(params.faceImage));
   }
   if (params.poseImage) {
     parts.push({ text: "BODY STRUCTURE REFERENCE (Pose/Stance):" });
-    parts.push({ inlineData: { mimeType: 'image/png', data: params.poseImage.split(',')[1] } });
+    parts.push(getImagePart(params.poseImage));
   }
   
   params.clothingImages.forEach((img, index) => {
     parts.push({ text: `CLOTHING ITEM ${index + 1} (${img.type}):` });
-    parts.push({ inlineData: { mimeType: 'image/png', data: img.data.split(',')[1] } });
+    parts.push(getImagePart(img.data));
   });
 
-  const response: GenerateContentResponse = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
-    contents: { parts },
-    config: { 
-      imageConfig: { 
-        aspectRatio: "3:4", 
-        imageSize: "2K" 
-      } 
+  return withRetry(async () => {
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: 'gemini-3.1-flash-image-preview',
+      contents: { parts },
+      config: { 
+        imageConfig: { 
+          aspectRatio: "3:4", 
+          imageSize: "2K" 
+        } 
+      }
+    });
+
+    if (!response.candidates?.[0]?.content?.parts) throw new Error("Generation failed - logic conflict or safety block.");
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
     }
+    throw new Error("No image data returned from synthesis engine.");
   });
-
-  if (!response.candidates?.[0]?.content?.parts) throw new Error("Generation failed - logic conflict or safety block.");
-
-  for (const part of response.candidates[0].content.parts) {
-    if (part.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-  }
-  throw new Error("No image data returned from synthesis engine.");
 }

@@ -28,17 +28,73 @@ export default function App() {
   const [mjPrompt, setMjPrompt] = useState<{ positive: string, negative: string } | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (errorMsg) {
+      const timer = setTimeout(() => setErrorMsg(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [errorMsg]);
+
+  useEffect(() => {
+    const checkApiKey = async () => {
+      if (window.aistudio) {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(hasKey);
+      } else {
+        setHasApiKey(true); // Fallback if not in AI Studio environment
+      }
+    };
+    checkApiKey();
+  }, []);
+
+  const handleOpenSelectKey = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      setHasApiKey(true);
+    }
+  };
+
+  const parseErrorMessage = (err: any) => {
+    let message = err.message || '';
+    try {
+      const parsed = JSON.parse(message);
+      message = parsed.error?.message || message;
+    } catch (e) {}
+    return message;
+  };
 
   const handleUpload = async (id: ImageSlotType, file: File) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = async () => {
-      const base64 = reader.result as string;
-      const setter = ['face', 'pose'].includes(id) ? setSlots : setClothing;
-      setter(prev => prev.map(s => s.id === id ? { ...s, data: base64, isProcessing: true } : s));
-      const description = await analyzeImage(base64, id);
-      setter(prev => prev.map(s => s.id === id ? { ...s, description, isProcessing: false } : s));
+      try {
+        const base64 = reader.result as string;
+        const setter = ['face', 'pose'].includes(id) ? setSlots : setClothing;
+        setter(prev => prev.map(s => s.id === id ? { ...s, data: base64, isProcessing: true } : s));
+        const description = await analyzeImage(base64, id);
+        setter(prev => prev.map(s => s.id === id ? { ...s, description, isProcessing: false } : s));
+      } catch (err: any) {
+        const message = parseErrorMessage(err);
+        if (message.includes('RESOURCE_EXHAUSTED')) {
+          setErrorMsg('이미지 분석 사용량이 초과되었습니다. 잠시만 기다려 주세요.');
+        } else {
+          setErrorMsg(`분석 실패: ${message || '이미지를 분석할 수 없습니다.'}`);
+        }
+        const setter = ['face', 'pose'].includes(id) ? setSlots : setClothing;
+        setter(prev => prev.map(s => s.id === id ? { ...s, isProcessing: false } : s));
+      }
     };
+  };
+
+  const clearAll = () => {
+    setSlots(INITIAL_SLOTS);
+    setClothing(CLOTHING_SLOTS);
+    setAdditionalPrompt('');
+    setResult(null);
+    setMjPrompt(null);
   };
 
   const handleGenerate = async () => {
@@ -69,6 +125,15 @@ export default function App() {
       });
       
       setResult({ imageUrl, aspectRatio: '3:4' });
+    } catch (err: any) {
+      const message = parseErrorMessage(err);
+      if (message.includes('RESOURCE_EXHAUSTED')) {
+        setErrorMsg('시스템 사용량이 초과되었습니다. 1분 정도 기다린 후 다시 시도해 주세요.');
+      } else if (message.includes('SAFETY')) {
+        setErrorMsg('안전 정책에 의해 생성이 차단되었습니다. 다른 이미지나 프롬프트를 사용해 주세요.');
+      } else {
+        setErrorMsg(`생성 실패: ${message || '알 수 없는 오류가 발생했습니다.'}`);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -80,6 +145,13 @@ export default function App() {
     try {
       const mjp = await generateMidjourneyPromptFromImage(result.imageUrl);
       setMjPrompt(mjp);
+    } catch (err: any) {
+      const message = parseErrorMessage(err);
+      if (message.includes('RESOURCE_EXHAUSTED')) {
+        setErrorMsg('프롬프트 생성 사용량이 초과되었습니다.');
+      } else {
+        setErrorMsg(`프롬프트 생성 실패: ${message || '오류 발생'}`);
+      }
     } finally {
       setIsPromptLoading(false);
     }
@@ -97,9 +169,49 @@ export default function App() {
 
   const fullMJ = mjPrompt ? `${mjPrompt.positive} --no ${mjPrompt.negative}` : "";
 
+  if (hasApiKey === false) {
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-8 text-center">
+        <div className="max-w-md space-y-8">
+          <div className="space-y-4">
+            <h1 className="text-4xl font-black tracking-tighter uppercase">API Key Required</h1>
+            <p className="text-zinc-400 text-sm leading-relaxed">
+              To use the high-quality Nano Banana 2 (Gemini 3.1 Flash Image) model, you must select a paid API key from your Google Cloud project.
+            </p>
+            <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 text-xs text-indigo-300 text-left">
+              <p className="font-bold mb-1">Important Note:</p>
+              <p>Please ensure your project has billing enabled. You can find more information in the <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-200 transition-colors">billing documentation</a>.</p>
+            </div>
+          </div>
+          <button 
+            onClick={handleOpenSelectKey}
+            className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black text-lg transition-all active:scale-95 shadow-[0_0_30px_rgba(79,70,229,0.3)]"
+          >
+            Select API Key
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (hasApiKey === null) {
+    return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
+  }
+
   return (
     <div className="min-h-screen bg-black text-white">
-      <header className="p-8 border-b border-zinc-900 text-center">
+      {/* Error Toast */}
+      {errorMsg && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-5 fade-in duration-300">
+          <div className="bg-red-600/90 backdrop-blur-md px-6 py-3 rounded-2xl flex items-center gap-3 shadow-2xl border border-red-500/50">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+            <span className="text-[12px] font-bold uppercase tracking-tight">{errorMsg}</span>
+            <button onClick={() => setErrorMsg(null)} className="ml-4 text-white/50 hover:text-white"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+          </div>
+        </div>
+      )}
+
+      <header className="p-8 border-b border-zinc-900 text-center relative">
         <div className="flex items-center justify-center gap-4">
           <h1 className="text-[36px] font-bold tracking-tight">AI Fashion / Item Mix</h1>
           <div className="bg-[#5456f3] px-3 py-1 rounded-lg flex items-center justify-center">
@@ -107,6 +219,14 @@ export default function App() {
           </div>
         </div>
         <p className="text-zinc-600 text-[11px] uppercase tracking-widest mt-2">Studio Editorial Synthesis Engine</p>
+        
+        <button 
+          id="reset-session-btn"
+          onClick={clearAll}
+          className="absolute right-8 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest text-zinc-700 hover:text-red-500 transition-colors"
+        >
+          Reset Session
+        </button>
       </header>
 
       <main className="max-w-[1800px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-0">
@@ -132,7 +252,12 @@ export default function App() {
             />
           </div>
 
-          <button onClick={handleGenerate} className="w-full py-6 bg-[#19ad55] rounded-2xl font-black text-[16px] hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:active:scale-100" disabled={isGenerating}>
+          <button 
+            id="generate-image-btn"
+            onClick={handleGenerate} 
+            className="w-full py-6 bg-[#19ad55] rounded-2xl font-black text-[16px] hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:active:scale-100" 
+            disabled={isGenerating}
+          >
             {isGenerating ? "ANALYZING INTENT..." : "Generate Image(2K)"}
           </button>
         </section>
@@ -143,6 +268,7 @@ export default function App() {
             <h2 className="text-[14px] font-black uppercase">Studio Output</h2>
             {result && (
               <button 
+                id="header-download-btn"
                 onClick={handleDownload}
                 className="flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-[12px] font-bold transition-all active:scale-95 group"
               >
@@ -198,6 +324,7 @@ export default function App() {
               <h3 className="text-[14px] font-black">Ai Generated Midjourney V7</h3>
               {result && !isPromptLoading && !mjPrompt && (
                 <button 
+                  id="generate-prompt-btn"
                   onClick={handleGeneratePrompt}
                   className="bg-zinc-800 hover:bg-zinc-700 text-[11px] font-bold py-2 px-4 rounded-lg border border-zinc-700 transition-colors"
                 >

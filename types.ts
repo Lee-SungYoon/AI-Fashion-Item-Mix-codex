@@ -13,3 +13,12 @@ export interface GenerationResult {
   imageUrl: string;
   aspectRatio: string;
 }
+
+declare global {
+  interface Window {
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}

@@ -24,7 +24,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ id, label, data, description,
     <div className="flex flex-col gap-2 w-full">
       <span className="text-[11px] font-bold text-[#ffffff] uppercase tracking-normal opacity-80">{label}</span>
       <div 
-        className={`relative flex flex-col items-center justify-center w-full aspect-square rounded-xl border border-dashed transition-all overflow-hidden ${data ? 'border-indigo-500 bg-zinc-950' : 'border-zinc-800 bg-black'}`}
+        className={`relative flex flex-col items-center justify-center w-full aspect-square rounded-xl border border-dashed transition-all overflow-hidden ${isDragging ? 'border-indigo-400 bg-indigo-500/10 scale-[1.02]' : data ? 'border-indigo-500 bg-zinc-950' : 'border-zinc-800 bg-black hover:border-zinc-700'}`}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={(e) => { e.preventDefault(); setIsDragging(false); const file = e.dataTransfer.files?.[0]; if (file) onUpload(id, file); }}
@@ -35,7 +35,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ id, label, data, description,
         {data ? (
           <>
             <img src={data} alt={label} className="w-full h-full object-contain pointer-events-none" />
-            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(id); }} className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-red-600 text-white rounded-lg border border-white/10 z-10">
+            <button 
+              id={`delete-${id}-btn`}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(id); }} 
+              className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-red-600 text-white rounded-lg border border-white/10 z-10 transition-colors"
+            >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
             </button>
           </>
