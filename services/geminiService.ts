@@ -35,6 +35,12 @@ export async function generateMidjourneyPromptFromImage(imageUrl: string, mode =
   });
 }
 
+export async function generateKlingPromptFromImage(imageUrl: string): Promise<{ prompt: string }> {
+  return requestJson<{ prompt: string }>('/api/kling-prompt', {
+    imageUrl,
+  });
+}
+
 export async function generateFashionMix(params: {
   faceImage?: string;
   faceDesc?: string;

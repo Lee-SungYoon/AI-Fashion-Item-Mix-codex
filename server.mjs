@@ -342,6 +342,52 @@ async function generateMidjourneyPromptFromImage(imageUrl, mode = 'detailed') {
   }
 }
 
+async function generateKlingPromptFromImage(imageUrl) {
+  const imagePart = getImagePart(imageUrl);
+  const ai = getAIClient();
+  const prompt = `Analyze the attached Section 4 generated fashion editorial image with maximum visual fidelity.
+
+  Create one Kling Omni image-to-video prompt for animating this exact still image.
+
+  Context and intent:
+  - The image is usually a fashion editorial, lookbook, or campaign result.
+  - The output should feel like a premium slow-motion fashion film, not a dramatic action scene.
+  - The reference image already defines the face, body, outfit, styling, lighting, and composition. Use the prompt mainly to direct motion, camera behavior, timing, and physical continuity.
+
+  Requirements:
+  - Preserve the model identity, facial structure, outfit, colors, garment shape, accessories, pose, scene, lighting, and 3:4 editorial composition from the image.
+  - Add natural subtle movement only: gentle breathing, slight head turn, soft blink, tiny expression change, minor hand or shoulder adjustment, fabric settling, hair movement, or a small weight shift when plausible.
+  - Add a controlled camera move suitable for Kling Omni: slow push-in, slight dolly, gentle handheld drift, or subtle parallax.
+  - Describe one continuous shot with no cuts or scene transitions.
+  - Keep the motion physically plausible and slow. Avoid dancing, running, jumping, rapid pose changes, face morphing, outfit changes, object warping, extra limbs, or camera shake.
+  - Write as a positive prompt only. Do not include a negative prompt, version parameters, markdown, labels, or explanations.
+  - Include short timing beats if helpful, for example "0-2s..." and "2-5s...".
+  - Do not mention that this is an uploaded image, generated image, reference image, or analysis.
+
+  Return only valid JSON with this exact shape:
+  {"prompt":"..."}`;
+
+  const result = await withRetry(async () => {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: { parts: [imagePart, { text: prompt }] },
+      config: { responseMimeType: 'application/json', temperature: 0.55, safetySettings: DEFAULT_SAFETY_SETTINGS },
+    });
+    return response.text;
+  });
+
+  try {
+    const parsed = JSON.parse(result || '{}');
+    return {
+      prompt: stripKlingPrompt(validateText(parsed.prompt, 4000) || 'One continuous slow-motion fashion editorial shot, the model holds the original pose with a soft blink and gentle breathing, fabric and hair move subtly, slow camera push-in, natural studio lighting, premium cinematic look.'),
+    };
+  } catch {
+    return {
+      prompt: stripKlingPrompt('One continuous slow-motion fashion editorial shot, the model holds the original pose with a soft blink and gentle breathing, fabric and hair move subtly, slow camera push-in, natural studio lighting, premium cinematic look.'),
+    };
+  }
+}
+
 function stripMidjourneyParams(prompt) {
   return prompt
     .replace(/\s--style\s+raw\b/g, '')
@@ -351,6 +397,15 @@ function stripMidjourneyParams(prompt) {
     .replace(/\s--raw\b/g, '')
     .replace(/\s--q\s+\S+/g, '')
     .replace(/\s--no\b.*$/g, '')
+    .trim();
+}
+
+function stripKlingPrompt(prompt) {
+  return prompt
+    .replace(/^\s*(negative prompt|negative|avoid)\s*:\s*.*$/gim, '')
+    .replace(/\s--no\b.*$/g, '')
+    .replace(/\s--v\s+\S+/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -377,6 +432,13 @@ async function handleApi(req, res) {
       if (!checkRateLimit(req, 'prompt', 20, 60_000)) return sendJson(res, 429, { error: 'Too many prompt requests.' });
       const body = await readJson(req);
       const prompt = await generateMidjourneyPromptFromImage(body.imageUrl, body.mode);
+      return sendJson(res, 200, prompt);
+    }
+
+    if (req.url === '/api/kling-prompt') {
+      if (!checkRateLimit(req, 'kling-prompt', 20, 60_000)) return sendJson(res, 429, { error: 'Too many prompt requests.' });
+      const body = await readJson(req);
+      const prompt = await generateKlingPromptFromImage(body.imageUrl);
       return sendJson(res, 200, prompt);
     }
 

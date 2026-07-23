@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ImageSlot, ImageSlotType, GenerationResult } from './types';
-import { analyzeImage, generateFashionMix, generateMidjourneyPromptFromImage } from './services/geminiService';
+import { analyzeImage, generateFashionMix, generateKlingPromptFromImage, generateMidjourneyPromptFromImage } from './services/geminiService';
 import ImageUpload from './components/ImageUpload';
 
 const INITIAL_SLOTS: ImageSlot[] = [
@@ -49,6 +49,7 @@ type GenerationHistoryItem = {
   id: string;
   imageUrl: string;
   prompt: string;
+  klingPrompt?: string;
   createdAt: string;
 };
 
@@ -68,9 +69,12 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('Synthesizing Editorial');
   const [isPromptLoading, setIsPromptLoading] = useState(false);
+  const [isKlingLoading, setIsKlingLoading] = useState(false);
   const [result, setResult] = useState<GenerationResult | null>(null);
   const [mjPrompt, setMjPrompt] = useState<{ positive: string } | null>(null);
+  const [klingPrompt, setKlingPrompt] = useState<{ prompt: string } | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [klingCopySuccess, setKlingCopySuccess] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -172,12 +176,14 @@ export default function App() {
     setExpandedAnalysisId(null);
     setResult(null);
     setMjPrompt(null);
+    setKlingPrompt(null);
   };
 
   const handleGenerate = async () => {
     setIsGenerating(true);
     setGenerationStatus('Preparing Session...');
     setMjPrompt(null);
+    setKlingPrompt(null);
     setResult(null);
     try {
       const faceSlot = slots.find(s => s.id === 'face');
@@ -205,23 +211,44 @@ export default function App() {
 
       setResult({ imageUrl, aspectRatio: '3:4' });
       setIsPromptLoading(true);
+      setIsKlingLoading(true);
       try {
-        const mjp = await generateMidjourneyPromptFromImage(imageUrl, midjourneyMode);
-        setMjPrompt(mjp);
+        const [mjResult, klingResult] = await Promise.allSettled([
+          generateMidjourneyPromptFromImage(imageUrl, midjourneyMode),
+          generateKlingPromptFromImage(imageUrl),
+        ]);
+        let mjPositive = '';
+        let klingText = '';
+
+        if (mjResult.status === 'fulfilled') {
+          mjPositive = mjResult.value.positive;
+          setMjPrompt(mjResult.value);
+        } else {
+          const promptMessage = parseErrorMessage(mjResult.reason);
+          setErrorMsg(`미드저니 프롬프트 생성 실패: ${promptMessage || '결과 이미지를 분석할 수 없습니다.'}`);
+        }
+
+        if (klingResult.status === 'fulfilled') {
+          klingText = klingResult.value.prompt;
+          setKlingPrompt(klingResult.value);
+        } else {
+          const promptMessage = parseErrorMessage(klingResult.reason);
+          setErrorMsg(`Kling 프롬프트 생성 실패: ${promptMessage || '결과 이미지를 분석할 수 없습니다.'}`);
+        }
+
         setHistory(prev => [
           {
             id: String(Date.now()),
             imageUrl,
-            prompt: mjp.positive,
+            prompt: mjPositive,
+            klingPrompt: klingText,
             createdAt: new Date().toLocaleString(),
           },
           ...prev,
         ].slice(0, 5));
-      } catch (promptErr: any) {
-        const promptMessage = parseErrorMessage(promptErr);
-        setErrorMsg(`미드저니 프롬프트 생성 실패: ${promptMessage || '결과 이미지를 분석할 수 없습니다.'}`);
       } finally {
         setIsPromptLoading(false);
+        setIsKlingLoading(false);
       }
     } catch (err: any) {
       const message = parseErrorMessage(err);
@@ -248,6 +275,7 @@ export default function App() {
           id: String(Date.now()),
           imageUrl: result.imageUrl,
           prompt: mjp.positive,
+          klingPrompt: klingPrompt?.prompt,
           createdAt: new Date().toLocaleString(),
         },
         ...prev,
@@ -264,6 +292,34 @@ export default function App() {
     }
   };
 
+  const handleGenerateKlingPrompt = async () => {
+    if (!result?.imageUrl) return;
+    setIsKlingLoading(true);
+    try {
+      const prompt = await generateKlingPromptFromImage(result.imageUrl);
+      setKlingPrompt(prompt);
+      setHistory(prev => [
+        {
+          id: String(Date.now()),
+          imageUrl: result.imageUrl,
+          prompt: mjPrompt?.positive || '',
+          klingPrompt: prompt.prompt,
+          createdAt: new Date().toLocaleString(),
+        },
+        ...prev,
+      ].slice(0, 5));
+    } catch (err: any) {
+      const message = parseErrorMessage(err);
+      if (message.includes('RESOURCE_EXHAUSTED')) {
+        setErrorMsg('Kling 프롬프트 생성 사용량이 초과되었습니다.');
+      } else {
+        setErrorMsg(`Kling 프롬프트 생성 실패: ${message || '오류 발생'}`);
+      }
+    } finally {
+      setIsKlingLoading(false);
+    }
+  };
+
   const handleDownload = () => {
     if (!result?.imageUrl) return;
     const link = document.createElement('a');
@@ -275,6 +331,7 @@ export default function App() {
   };
 
   const fullMJ = mjPrompt?.positive || "";
+  const fullKling = klingPrompt?.prompt || "";
   const faceSlot = slots.find(s => s.id === 'face');
   const poseSlot = slots.find(s => s.id === 'pose');
   const uploadedClothing = clothing.filter(c => c.data);
@@ -544,6 +601,36 @@ export default function App() {
             </div>
           </div>
 
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold text-white">6. Kling Prompt</h3>
+              {result && !isKlingLoading && !klingPrompt && (
+                <button
+                  id="generate-kling-prompt-btn"
+                  onClick={handleGenerateKlingPrompt}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-[11px] font-bold text-gray-300 transition-colors hover:border-indigo-500/30 hover:bg-white/[0.06]"
+                >
+                  프롬프트 생성하기
+                </button>
+              )}
+            </div>
+            <div className="relative rounded-xl border border-indigo-500/10 bg-[#020617] p-6">
+              <div className="flex justify-end mb-4 h-9">
+                {klingPrompt && (
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(fullKling); setKlingCopySuccess(true); setTimeout(() => setKlingCopySuccess(false), 2000); }}
+                    className="h-full w-[110px] rounded-lg bg-white text-[12px] font-bold text-black transition-all hover:bg-gray-200 active:scale-95"
+                  >
+                    {klingCopySuccess ? "Copied!" : "Copy Prompt"}
+                  </button>
+                )}
+              </div>
+              <pre className="min-h-[80px] whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-gray-300">
+                {isKlingLoading ? "4번 생성 결과 이미지를 분석해 Kling Omni용 모션 프롬프트를 만드는 중..." : fullKling || (result ? "결과 이미지 기준 Kling Omni용 프롬프트를 생성할 수 있습니다." : "Awaiting results...")}
+              </pre>
+            </div>
+          </div>
+
           {history.length > 0 && (
             <div className="space-y-4">
               <h3 className="text-xl font-bold text-white">최근 생성 히스토리</h3>
@@ -553,14 +640,15 @@ export default function App() {
                     key={item.id}
                     onClick={() => {
                       setResult({ imageUrl: item.imageUrl, aspectRatio: '3:4' });
-                      setMjPrompt({ positive: item.prompt });
+                      setMjPrompt(item.prompt ? { positive: item.prompt } : null);
+                      setKlingPrompt(item.klingPrompt ? { prompt: item.klingPrompt } : null);
                     }}
                     className="flex gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3 text-left transition-colors hover:border-indigo-500/30"
                   >
                     <img src={item.imageUrl} alt="" className="h-20 w-14 rounded-lg object-cover" />
                     <div className="min-w-0 flex-1">
                       <p className="text-[11px] font-bold text-gray-400">{item.createdAt}</p>
-                      <p className="mt-2 line-clamp-3 text-[10px] leading-relaxed text-gray-600">{item.prompt}</p>
+                      <p className="mt-2 line-clamp-3 text-[10px] leading-relaxed text-gray-600">{item.prompt || item.klingPrompt}</p>
                     </div>
                   </button>
                 ))}
