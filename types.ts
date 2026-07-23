@@ -1,5 +1,5 @@
 
-export type ImageSlotType = 'face' | 'pose' | 'outer' | 'top' | 'bottom' | 'shoes' | 'accessory';
+export type ImageSlotType = 'face' | 'pose' | 'outer' | 'top' | 'bottom' | 'shoes' | 'accessory' | 'accessory2';
 
 export interface ImageSlot {
   id: ImageSlotType;

@@ -14,7 +14,8 @@ const CLOTHING_SLOTS: ImageSlot[] = [
   { id: 'top', label: '상의', data: null, description: '', isProcessing: false },
   { id: 'bottom', label: '하의', data: null, description: '', isProcessing: false },
   { id: 'shoes', label: '신발', data: null, description: '', isProcessing: false },
-  { id: 'accessory', label: '악세서리', data: null, description: '', isProcessing: false },
+  { id: 'accessory', label: '악세서리.1', data: null, description: '', isProcessing: false },
+  { id: 'accessory2', label: '악세서리.2', data: null, description: '', isProcessing: false },
 ];
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);

@@ -11,7 +11,7 @@ const MAX_JSON_BYTES = 170 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_PROMPT_CHARS = 2000;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
-const IMAGE_SLOT_TYPES = new Set(['face', 'pose', 'outer', 'top', 'bottom', 'shoes', 'accessory']);
+const IMAGE_SLOT_TYPES = new Set(['face', 'pose', 'outer', 'top', 'bottom', 'shoes', 'accessory', 'accessory2']);
 
 loadEnvFile('.env.local');
 loadEnvFile('.env');
