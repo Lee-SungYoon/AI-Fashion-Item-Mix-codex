@@ -14,7 +14,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
-migrated_prompt_history/
 
 # Editor directories and files
 .vscode/*
