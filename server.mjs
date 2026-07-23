@@ -12,6 +12,23 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_PROMPT_CHARS = 2000;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const IMAGE_SLOT_TYPES = new Set(['face', 'pose', 'outer', 'top', 'bottom', 'shoes', 'accessory', 'accessory2']);
+const CREATIVE_PRESET_GUIDES = {
+  editorial: 'Professional high-fashion studio editorial, controlled lighting, refined magazine composition.',
+  lookbook: 'Clean premium lookbook, full outfit readability, accurate garment colors and construction details.',
+  campaign: 'Luxury campaign image, polished commercial styling, aspirational mood, elevated product focus.',
+  street: 'Street editorial, natural attitude, urban fashion context, stylish but realistic environment.',
+};
+const MERGE_MODE_GUIDES = {
+  balanced: 'Balance facial identity fidelity and pose fidelity equally.',
+  face: 'Prioritize exact facial identity and hair fidelity while still preserving the pose.',
+  pose: 'Prioritize exact body pose, stance, and camera angle while preserving the face as much as possible.',
+};
+const MIDJOURNEY_MODE_GUIDES = {
+  detailed: 'Write a detailed visual prompt with rich image-specific details.',
+  short: 'Write a concise prompt, one compact paragraph, with only the strongest visual cues.',
+  lookbook: 'Write a clean fashion lookbook prompt focused on outfit readability and styling.',
+  campaign: 'Write a premium advertising campaign prompt focused on luxury mood and commercial polish.',
+};
 loadEnvFile('.env.local');
 loadEnvFile('.env');
 
@@ -177,7 +194,9 @@ async function analyzeImage(base64Data, type) {
 
 async function synthesizeEditorialVision(params) {
   const ai = getAIClient();
-  const clothingItems = params.clothingItems.slice(0, 5);
+  const clothingItems = params.clothingItems.slice(0, 6);
+  const presetGuide = CREATIVE_PRESET_GUIDES[params.creativePreset] || CREATIVE_PRESET_GUIDES.editorial;
+  const mergeGuide = MERGE_MODE_GUIDES[params.mergeMode] || MERGE_MODE_GUIDES.balanced;
   const analysisPrompt = `
     Act as a Master Fashion Creative Director. You are preparing a technical brief for a high-end 2K image synthesis engine.
     Your goal is to perfectly blend identity, posture, and wardrobe into a single cinematic shot.
@@ -187,6 +206,8 @@ async function synthesizeEditorialVision(params) {
     2. TARGET STRUCTURE (Pose/Stance): ${validateText(params.poseDesc, 4000) || 'Adopt the exact body geometry and skeletal pose from Pose Reference.'}
     3. TARGET WARDROBE (Items): ${clothingItems.map((c) => `[${validateText(c.type, 40)}: ${validateText(c.description, 4000)}]`).join('; ')}
     4. ARTISTIC CONTEXT (User Intent): "${validateText(params.userPrompt)}"
+    5. STYLE PRESET: ${presetGuide}
+    6. MERGE PRIORITY: ${mergeGuide}
 
     INSTRUCTIONS FOR THE BRIEF:
     - DECOUPLE & RECOMBINE: Explicitly instruct the engine to take ONLY the body pose from the Pose Reference and ONLY the facial identity from the Face Reference.
@@ -208,7 +229,9 @@ async function synthesizeEditorialVision(params) {
 }
 
 async function generateFashionMix(params) {
-  const clothingImages = Array.isArray(params.clothingImages) ? params.clothingImages.slice(0, 5) : [];
+  const clothingImages = Array.isArray(params.clothingImages) ? params.clothingImages.slice(0, 6) : [];
+  const mergeGuide = MERGE_MODE_GUIDES[params.mergeMode] || MERGE_MODE_GUIDES.balanced;
+  const presetGuide = CREATIVE_PRESET_GUIDES[params.creativePreset] || CREATIVE_PRESET_GUIDES.editorial;
   const faceImagePart = params.faceImage ? getImagePart(params.faceImage) : null;
   const poseImagePart = params.poseImage ? getImagePart(params.poseImage) : null;
   const clothingImageParts = clothingImages.map((img) => getImagePart(img.data));
@@ -217,6 +240,8 @@ async function generateFashionMix(params) {
     userPrompt: params.additionalPrompt,
     faceDesc: params.faceDesc,
     poseDesc: params.poseDesc,
+    mergeMode: params.mergeMode,
+    creativePreset: params.creativePreset,
     clothingItems: clothingImages.map((c) => ({ description: c.description, type: c.type })),
   });
 
@@ -230,6 +255,7 @@ async function generateFashionMix(params) {
          - Use the IDENTITY REFERENCE only for face, hair, skin tone, expression, and recognizable facial structure.
          - Use the BODY STRUCTURE REFERENCE only for pose, body alignment, camera angle, stance, lighting direction, and mood.
          - Do not invent a new face or a new pose when these references are present.
+         - Merge priority: ${mergeGuide}
 
       2. CLOTHING ITEM FIDELITY: Analyze every Clothing Items image precisely.
          - Preserve original garment silhouettes, colors, materials, textures, seams, hardware, logos if visible, and layering order.
@@ -239,6 +265,7 @@ async function generateFashionMix(params) {
          - The model must look like the References identity in the References pose while wearing the uploaded Clothing Items.
 
       4. SCENE EXECUTION: ${masterVision}
+      5. STYLE PRESET EXECUTION: ${presetGuide}
 
       The final output must be photorealistic, high-end, and indistinguishable from a real fashion magazine shoot.
     ` },
@@ -273,12 +300,14 @@ async function generateFashionMix(params) {
   });
 }
 
-async function generateMidjourneyPromptFromImage(imageUrl) {
+async function generateMidjourneyPromptFromImage(imageUrl, mode = 'detailed') {
   const imagePart = getImagePart(imageUrl);
   const ai = getAIClient();
+  const modeGuide = MIDJOURNEY_MODE_GUIDES[mode] || MIDJOURNEY_MODE_GUIDES.detailed;
   const prompt = `Analyze the attached Section 4 generated result image with maximum visual fidelity.
 
   Create one Midjourney-ready positive prompt that would recreate an image as close as possible to this exact result.
+  Output mode: ${modeGuide}
 
   Requirements:
   - Describe the subject identity, face, hairstyle, expression, pose, body angle, wardrobe, accessories, fabric textures, colors, layering, lighting, background, camera angle, lens feel, composition, editorial styling, and mood visible in the image.
@@ -347,7 +376,7 @@ async function handleApi(req, res) {
     if (req.url === '/api/midjourney-prompt') {
       if (!checkRateLimit(req, 'prompt', 20, 60_000)) return sendJson(res, 429, { error: 'Too many prompt requests.' });
       const body = await readJson(req);
-      const prompt = await generateMidjourneyPromptFromImage(body.imageUrl);
+      const prompt = await generateMidjourneyPromptFromImage(body.imageUrl, body.mode);
       return sendJson(res, 200, prompt);
     }
 

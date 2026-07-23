@@ -28,9 +28,10 @@ export async function analyzeImage(base64Data: string, type: string): Promise<st
   return result.description;
 }
 
-export async function generateMidjourneyPromptFromImage(imageUrl: string): Promise<{ positive: string }> {
+export async function generateMidjourneyPromptFromImage(imageUrl: string, mode = 'detailed'): Promise<{ positive: string }> {
   return requestJson<{ positive: string }>('/api/midjourney-prompt', {
     imageUrl,
+    mode,
   });
 }
 
@@ -41,6 +42,8 @@ export async function generateFashionMix(params: {
   poseDesc?: string;
   clothingImages: { data: string; description: string; type: string }[];
   additionalPrompt: string;
+  mergeMode?: string;
+  creativePreset?: string;
   onStatusUpdate?: (status: string) => void;
 }): Promise<string> {
   params.onStatusUpdate?.('References와 Clothing Items 분석 중...');
@@ -52,6 +55,8 @@ export async function generateFashionMix(params: {
     poseDesc: params.poseDesc,
     clothingImages: params.clothingImages,
     additionalPrompt: params.additionalPrompt,
+    mergeMode: params.mergeMode,
+    creativePreset: params.creativePreset,
   });
 
   params.onStatusUpdate?.('2K 패션 에디토리얼 합성 완료');

@@ -20,6 +20,37 @@ const CLOTHING_SLOTS: ImageSlot[] = [
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION = 1800;
+
+const MERGE_MODES = [
+  { value: 'balanced', label: '균형 유지' },
+  { value: 'face', label: '얼굴 우선' },
+  { value: 'pose', label: '포즈 우선' },
+] as const;
+
+const CREATIVE_PRESETS = [
+  { value: 'editorial', label: 'Studio Editorial' },
+  { value: 'lookbook', label: 'Lookbook' },
+  { value: 'campaign', label: 'Luxury Campaign' },
+  { value: 'street', label: 'Street Editorial' },
+] as const;
+
+const MIDJOURNEY_MODES = [
+  { value: 'detailed', label: '상세하게' },
+  { value: 'short', label: '짧게' },
+  { value: 'lookbook', label: '룩북용' },
+  { value: 'campaign', label: '광고용' },
+] as const;
+
+type MergeMode = typeof MERGE_MODES[number]['value'];
+type CreativePreset = typeof CREATIVE_PRESETS[number]['value'];
+type MidjourneyMode = typeof MIDJOURNEY_MODES[number]['value'];
+type GenerationHistoryItem = {
+  id: string;
+  imageUrl: string;
+  prompt: string;
+  createdAt: string;
+};
 
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
   <h2 className="text-xl font-bold text-white">{children}</h2>
@@ -29,6 +60,11 @@ export default function App() {
   const [slots, setSlots] = useState<ImageSlot[]>(INITIAL_SLOTS);
   const [clothing, setClothing] = useState<ImageSlot[]>(CLOTHING_SLOTS);
   const [additionalPrompt, setAdditionalPrompt] = useState('');
+  const [mergeMode, setMergeMode] = useState<MergeMode>('balanced');
+  const [creativePreset, setCreativePreset] = useState<CreativePreset>('editorial');
+  const [midjourneyMode, setMidjourneyMode] = useState<MidjourneyMode>('detailed');
+  const [expandedAnalysisId, setExpandedAnalysisId] = useState<ImageSlotType | null>(null);
+  const [history, setHistory] = useState<GenerationHistoryItem[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('Synthesizing Editorial');
   const [isPromptLoading, setIsPromptLoading] = useState(false);
@@ -66,6 +102,36 @@ export default function App() {
     return message;
   };
 
+  const resizeImageForUpload = (file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const image = new Image();
+      image.onerror = () => reject(new Error('이미지를 처리할 수 없습니다.'));
+      image.onload = () => {
+        const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(image.width, image.height));
+        if (scale === 1 && file.size <= 8 * 1024 * 1024) {
+          resolve(dataUrl);
+          return;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) {
+          resolve(dataUrl);
+          return;
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.92));
+      };
+      image.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+
   const handleUpload = async (id: ImageSlotType, file: File) => {
     if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
       setErrorMsg('PNG, JPG, WEBP 이미지만 업로드할 수 있습니다.');
@@ -75,33 +141,35 @@ export default function App() {
       setErrorMsg('이미지 용량은 20MB 이하만 업로드할 수 있습니다.');
       return;
     }
-
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = async () => {
-      try {
-        const base64 = reader.result as string;
-        const setter = ['face', 'pose'].includes(id) ? setSlots : setClothing;
-        setter(prev => prev.map(s => s.id === id ? { ...s, data: base64, isProcessing: true } : s));
-        const description = await analyzeImage(base64, id);
-        setter(prev => prev.map(s => s.id === id ? { ...s, description, isProcessing: false } : s));
-      } catch (err: any) {
-        const message = parseErrorMessage(err);
-        if (message.includes('RESOURCE_EXHAUSTED')) {
-          setErrorMsg('이미지 분석 사용량이 초과되었습니다. 잠시만 기다려 주세요.');
-        } else {
-          setErrorMsg(`분석 실패: ${message || '이미지를 분석할 수 없습니다.'}`);
-        }
-        const setter = ['face', 'pose'].includes(id) ? setSlots : setClothing;
-        setter(prev => prev.map(s => s.id === id ? { ...s, isProcessing: false } : s));
+    try {
+      const setter = ['face', 'pose'].includes(id) ? setSlots : setClothing;
+      setter(prev => prev.map(s => s.id === id ? { ...s, isProcessing: true } : s));
+      const base64 = await resizeImageForUpload(file);
+      setter(prev => prev.map(s => s.id === id ? { ...s, data: base64 } : s));
+      const description = await analyzeImage(base64, id);
+      setter(prev => prev.map(s => s.id === id ? { ...s, description, isProcessing: false } : s));
+    } catch (err: any) {
+      const message = parseErrorMessage(err);
+      if (message.includes('RESOURCE_EXHAUSTED')) {
+        setErrorMsg('이미지 분석 사용량이 초과되었습니다. 잠시만 기다려 주세요.');
+      } else if (message.includes('Invalid image')) {
+        setErrorMsg('이미지 형식이나 용량을 확인해 주세요. PNG, JPG, WEBP만 지원합니다.');
+      } else {
+        setErrorMsg(`분석 실패: ${message || '이미지를 분석할 수 없습니다.'}`);
       }
-    };
+      const setter = ['face', 'pose'].includes(id) ? setSlots : setClothing;
+      setter(prev => prev.map(s => s.id === id ? { ...s, isProcessing: false } : s));
+    }
   };
 
   const clearAll = () => {
     setSlots(INITIAL_SLOTS);
     setClothing(CLOTHING_SLOTS);
     setAdditionalPrompt('');
+    setMergeMode('balanced');
+    setCreativePreset('editorial');
+    setMidjourneyMode('detailed');
+    setExpandedAnalysisId(null);
     setResult(null);
     setMjPrompt(null);
   };
@@ -130,14 +198,25 @@ export default function App() {
         poseDesc: poseSlot?.description,
         clothingImages: cImages,
         additionalPrompt,
+        mergeMode,
+        creativePreset,
         onStatusUpdate: (status) => setGenerationStatus(status)
       });
 
       setResult({ imageUrl, aspectRatio: '3:4' });
       setIsPromptLoading(true);
       try {
-        const mjp = await generateMidjourneyPromptFromImage(imageUrl);
+        const mjp = await generateMidjourneyPromptFromImage(imageUrl, midjourneyMode);
         setMjPrompt(mjp);
+        setHistory(prev => [
+          {
+            id: String(Date.now()),
+            imageUrl,
+            prompt: mjp.positive,
+            createdAt: new Date().toLocaleString(),
+          },
+          ...prev,
+        ].slice(0, 5));
       } catch (promptErr: any) {
         const promptMessage = parseErrorMessage(promptErr);
         setErrorMsg(`미드저니 프롬프트 생성 실패: ${promptMessage || '결과 이미지를 분석할 수 없습니다.'}`);
@@ -162,8 +241,17 @@ export default function App() {
     if (!result?.imageUrl) return;
     setIsPromptLoading(true);
     try {
-      const mjp = await generateMidjourneyPromptFromImage(result.imageUrl);
+      const mjp = await generateMidjourneyPromptFromImage(result.imageUrl, midjourneyMode);
       setMjPrompt(mjp);
+      setHistory(prev => [
+        {
+          id: String(Date.now()),
+          imageUrl: result.imageUrl,
+          prompt: mjp.positive,
+          createdAt: new Date().toLocaleString(),
+        },
+        ...prev,
+      ].slice(0, 5));
     } catch (err: any) {
       const message = parseErrorMessage(err);
       if (message.includes('RESOURCE_EXHAUSTED')) {
@@ -187,6 +275,17 @@ export default function App() {
   };
 
   const fullMJ = mjPrompt?.positive || "";
+  const faceSlot = slots.find(s => s.id === 'face');
+  const poseSlot = slots.find(s => s.id === 'pose');
+  const uploadedClothing = clothing.filter(c => c.data);
+  const pendingAnalysis = [...slots, ...clothing].some(s => s.isProcessing);
+  const checklistItems = [
+    { label: '얼굴', ready: Boolean(faceSlot?.data), note: faceSlot?.description ? '분석 완료' : '대기' },
+    { label: '포즈', ready: Boolean(poseSlot?.data), note: poseSlot?.description ? '분석 완료' : '대기' },
+    { label: '의류', ready: uploadedClothing.length > 0, note: `${uploadedClothing.length}개 업로드` },
+    { label: '분석', ready: !pendingAnalysis && [...slots, ...uploadedClothing].filter(s => s.data).every(s => s.description), note: pendingAnalysis ? '진행 중' : '준비됨' },
+  ];
+  const analyzedSlots = [...slots, ...clothing].filter(s => s.description);
 
   if (hasApiKey === false) {
     return (
@@ -252,18 +351,68 @@ export default function App() {
         <section className="flex flex-col gap-8 lg:col-span-6">
           <div className="space-y-4">
             <SectionTitle>1. 레퍼런스 이미지</SectionTitle>
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">{slots.map(s => <ImageUpload key={s.id} {...s} onUpload={handleUpload} onDelete={(id) => setSlots(p => p.map(x => x.id === id ? {...x, data: null} : x))} />)}</div>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">{slots.map(s => <ImageUpload key={s.id} {...s} onUpload={handleUpload} onDelete={(id) => setSlots(p => p.map(x => x.id === id ? {...x, data: null, description: ''} : x))} />)}</div>
           </div>
 
           <div className="space-y-4">
             <SectionTitle>2. 의류 아이템</SectionTitle>
             <div className="rounded-2xl border border-white/5 bg-[#050505] p-2">
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-3">{clothing.map(c => <ImageUpload key={c.id} {...c} onUpload={handleUpload} onDelete={(id) => setClothing(p => p.map(x => x.id === id ? {...x, data: null} : x))} />)}</div>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3">{clothing.map(c => <ImageUpload key={c.id} {...c} onUpload={handleUpload} onDelete={(id) => setClothing(p => p.map(x => x.id === id ? {...x, data: null, description: ''} : x))} />)}</div>
             </div>
+            {analyzedSlots.length > 0 && (
+              <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-[13px] font-bold text-gray-300">분석 결과</p>
+                  <span className="text-[10px] text-gray-600">{analyzedSlots.length}개 분석됨</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {analyzedSlots.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => setExpandedAnalysisId(expandedAnalysisId === item.id ? null : item.id)}
+                      className={`rounded-lg border px-3 py-2 text-[11px] font-bold transition-colors ${expandedAnalysisId === item.id ? 'border-indigo-400/50 bg-indigo-500/10 text-indigo-300' : 'border-white/10 bg-black/20 text-gray-400 hover:border-white/20 hover:text-gray-200'}`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                {expandedAnalysisId && (
+                  <p className="mt-4 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-xl border border-white/5 bg-black/30 p-4 text-[11px] leading-relaxed text-gray-400">
+                    {analyzedSlots.find(item => item.id === expandedAnalysisId)?.description}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
             <SectionTitle>3. 추가 프롬프트</SectionTitle>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                <p className="mb-3 text-[12px] font-bold text-gray-300">References 병합 강도</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {MERGE_MODES.map(mode => (
+                    <button
+                      key={mode.value}
+                      onClick={() => setMergeMode(mode.value)}
+                      className={`rounded-lg px-3 py-2 text-[11px] font-bold transition-colors ${mergeMode === mode.value ? 'bg-indigo-500 text-white' : 'bg-white/[0.04] text-gray-500 hover:text-gray-200'}`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+                <p className="mb-3 text-[12px] font-bold text-gray-300">스타일 프리셋</p>
+                <select
+                  value={creativePreset}
+                  onChange={(event) => setCreativePreset(event.target.value as CreativePreset)}
+                  className="h-10 w-full rounded-lg border border-white/10 bg-black px-3 text-[12px] font-bold text-gray-300 focus:border-indigo-500/50 focus:outline-none"
+                >
+                  {CREATIVE_PRESETS.map(preset => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
+                </select>
+              </div>
+            </div>
             <textarea
               value={additionalPrompt}
               onChange={(e) => setAdditionalPrompt(e.target.value)}
@@ -272,11 +421,26 @@ export default function App() {
             />
           </div>
 
+          <div className="rounded-2xl border border-white/5 bg-[#050505] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[13px] font-bold text-white">생성 전 체크리스트</p>
+              <span className="text-[10px] text-gray-600">{checklistItems.filter(item => item.ready).length}/{checklistItems.length}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              {checklistItems.map(item => (
+                <div key={item.label} className={`rounded-xl border p-3 ${item.ready ? 'border-indigo-500/20 bg-indigo-500/5' : 'border-white/5 bg-black/20'}`}>
+                  <p className={`text-[12px] font-bold ${item.ready ? 'text-indigo-300' : 'text-gray-500'}`}>{item.label}</p>
+                  <p className="mt-1 text-[10px] text-gray-600">{item.note}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <button
             id="generate-image-btn"
             onClick={handleGenerate}
             className="w-full rounded-xl bg-[#242b35] py-6 text-[16px] font-bold text-gray-200 shadow-2xl transition-all hover:bg-[#303846] active:scale-[0.98] disabled:cursor-not-allowed disabled:text-gray-500 disabled:opacity-50 disabled:active:scale-100"
-            disabled={isGenerating}
+            disabled={isGenerating || pendingAnalysis}
           >
             {isGenerating ? "이미지 생성 중..." : "2K 이미지 생성"}
           </button>
@@ -352,6 +516,17 @@ export default function App() {
                 </button>
               )}
             </div>
+            <div className="flex flex-wrap gap-2">
+              {MIDJOURNEY_MODES.map(mode => (
+                <button
+                  key={mode.value}
+                  onClick={() => setMidjourneyMode(mode.value)}
+                  className={`rounded-lg border px-3 py-2 text-[11px] font-bold transition-colors ${midjourneyMode === mode.value ? 'border-indigo-400/50 bg-indigo-500/10 text-indigo-300' : 'border-white/10 bg-white/[0.03] text-gray-500 hover:text-gray-200'}`}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
             <div className="relative rounded-xl border border-indigo-500/10 bg-[#020617] p-6">
               <div className="flex justify-end mb-4 h-9">
                 {mjPrompt && (
@@ -368,6 +543,30 @@ export default function App() {
               </pre>
             </div>
           </div>
+
+          {history.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-xl font-bold text-white">최근 생성 히스토리</h3>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {history.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setResult({ imageUrl: item.imageUrl, aspectRatio: '3:4' });
+                      setMjPrompt({ positive: item.prompt });
+                    }}
+                    className="flex gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3 text-left transition-colors hover:border-indigo-500/30"
+                  >
+                    <img src={item.imageUrl} alt="" className="h-20 w-14 rounded-lg object-cover" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold text-gray-400">{item.createdAt}</p>
+                      <p className="mt-2 line-clamp-3 text-[10px] leading-relaxed text-gray-600">{item.prompt}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
         </div>
       </main>
