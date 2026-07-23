@@ -17,6 +17,10 @@ const CLOTHING_SLOTS: ImageSlot[] = [
   { id: 'accessory', label: '악세서리', data: null, description: '', isProcessing: false },
 ];
 
+const SectionTitle = ({ children }: { children: React.ReactNode }) => (
+  <h2 className="text-xl font-bold text-white">{children}</h2>
+);
+
 export default function App() {
   const [slots, setSlots] = useState<ImageSlot[]>(INITIAL_SLOTS);
   const [clothing, setClothing] = useState<ImageSlot[]>(CLOTHING_SLOTS);
@@ -199,7 +203,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen overflow-x-hidden bg-black font-sans text-white selection:bg-indigo-600/30">
       {/* Error Toast */}
       {errorMsg && (
         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-5 fade-in duration-300">
@@ -211,66 +215,67 @@ export default function App() {
         </div>
       )}
 
-      <header className="p-8 border-b border-zinc-900 text-center relative">
-        <div className="flex items-center justify-center gap-4">
-          <h1 className="text-[36px] font-bold tracking-tight">AI Fashion / Item Mix</h1>
-          <div className="bg-[#5456f3] px-3 py-1 rounded-lg flex items-center justify-center">
-            <span className="text-white text-[12px] font-black uppercase tracking-normal">PRO</span>
-          </div>
+      <header className="relative mx-auto max-w-[1920px] px-6 pb-2 pt-8 text-center">
+        <div className="mb-2 flex items-center justify-center gap-3">
+          <h1 className="text-4xl font-bold tracking-tight text-white">AI Fashion / Item Mix</h1>
+          <span className="rounded-md bg-[#4F46E5] px-2.5 py-1 text-xs font-bold tracking-wider text-white shadow-lg shadow-indigo-500/20">PRO</span>
         </div>
-        <p className="text-zinc-600 text-[11px] uppercase tracking-widest mt-2">Studio Editorial Synthesis Engine</p>
+        <p className="text-sm font-medium text-gray-500">Gemini Image · High 품질</p>
 
         <button
           id="reset-session-btn"
           onClick={clearAll}
-          className="absolute right-8 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest text-zinc-700 hover:text-red-500 transition-colors"
+          className="mt-4 text-[10px] font-bold uppercase tracking-wider text-gray-700 transition-colors hover:text-red-500 md:absolute md:right-12 md:top-10 md:mt-0"
         >
           Reset Session
         </button>
       </header>
 
-      <main className="max-w-[1800px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-0">
+      <main className="mx-auto max-w-[1920px] p-6 md:p-8 lg:p-12">
+        <div className="grid grid-cols-1 items-start gap-12 lg:grid-cols-12">
         {/* Left Panel */}
-        <section className="p-10 border-r border-zinc-900 space-y-12">
-          <div className="space-y-6">
-            <h2 className="text-[14px] font-black uppercase">References</h2>
-            <div className="grid grid-cols-2 gap-6">{slots.map(s => <ImageUpload key={s.id} {...s} onUpload={handleUpload} onDelete={(id) => setSlots(p => p.map(x => x.id === id ? {...x, data: null} : x))} />)}</div>
+        <section className="flex flex-col gap-8 lg:col-span-6">
+          <div className="space-y-4">
+            <SectionTitle>1. 레퍼런스 이미지</SectionTitle>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">{slots.map(s => <ImageUpload key={s.id} {...s} onUpload={handleUpload} onDelete={(id) => setSlots(p => p.map(x => x.id === id ? {...x, data: null} : x))} />)}</div>
           </div>
 
-          <div className="space-y-6">
-            <h2 className="text-[14px] font-black uppercase">Clothing Items</h2>
-            <div className="grid grid-cols-3 gap-4">{clothing.map(c => <ImageUpload key={c.id} {...c} onUpload={handleUpload} onDelete={(id) => setClothing(p => p.map(x => x.id === id ? {...x, data: null} : x))} />)}</div>
+          <div className="space-y-4">
+            <SectionTitle>2. 의류 아이템</SectionTitle>
+            <div className="rounded-2xl border border-white/5 bg-[#050505] p-2">
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3">{clothing.map(c => <ImageUpload key={c.id} {...c} onUpload={handleUpload} onDelete={(id) => setClothing(p => p.map(x => x.id === id ? {...x, data: null} : x))} />)}</div>
+            </div>
           </div>
 
-          <div className="space-y-6">
-            <h2 className="text-[14px] font-black uppercase tracking-tight">Prompt 추가</h2>
+          <div className="space-y-4">
+            <SectionTitle>3. 추가 프롬프트</SectionTitle>
             <textarea
               value={additionalPrompt}
               onChange={(e) => setAdditionalPrompt(e.target.value)}
               placeholder="배경, 조명, 분위기 또는 특정 디테일을 입력하세요 (예: 80s Cyberpunk, Studio Soft Lighting, Vogue Style...)"
-              className="w-full h-32 bg-zinc-950 border border-zinc-800 rounded-2xl p-6 text-[13px] text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:border-indigo-500/50 transition-all resize-none"
+              className="h-32 w-full resize-none rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-[13px] text-gray-300 transition-all placeholder:text-gray-700 focus:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             />
           </div>
 
           <button
             id="generate-image-btn"
             onClick={handleGenerate}
-            className="w-full py-6 bg-[#19ad55] rounded-2xl font-black text-[16px] hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:active:scale-100"
+            className="w-full rounded-xl bg-[#242b35] py-6 text-[16px] font-bold text-gray-200 shadow-2xl transition-all hover:bg-[#303846] active:scale-[0.98] disabled:cursor-not-allowed disabled:text-gray-500 disabled:opacity-50 disabled:active:scale-100"
             disabled={isGenerating}
           >
-            {isGenerating ? "ANALYZING INTENT..." : "Generate Image(2K)"}
+            {isGenerating ? "이미지 생성 중..." : "2K 이미지 생성"}
           </button>
         </section>
 
         {/* Right Panel */}
-        <section className="p-10 space-y-10">
+        <section className="space-y-8 lg:col-span-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-[14px] font-black uppercase">Studio Output</h2>
+            <SectionTitle>4. 생성 결과</SectionTitle>
             {result && (
               <button
                 id="header-download-btn"
                 onClick={handleDownload}
-                className="flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-[12px] font-bold transition-all active:scale-95 group"
+                className="group flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-[12px] font-bold text-gray-300 transition-all hover:border-indigo-500/30 hover:bg-white/[0.06] active:scale-95"
               >
                 <svg className="w-4 h-4 text-zinc-400 group-hover:text-indigo-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -280,13 +285,13 @@ export default function App() {
             )}
           </div>
 
-          <div className="aspect-[3/4] bg-zinc-950 rounded-3xl border border-zinc-900 overflow-hidden relative group">
+          <div className="group relative aspect-[3/4] overflow-hidden rounded-2xl border-2 border-dashed border-white/10 bg-white/[0.02]">
             {isGenerating ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-black/40 backdrop-blur-sm z-30">
                 <div className="w-12 h-12 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
                 <div className="flex flex-col items-center gap-2">
-                  <p className="text-[14px] font-black uppercase tracking-[0.2em] animate-pulse text-indigo-400">{generationStatus}</p>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest">{generationStatus.includes('Intent') ? 'Refining creative directive...' : 'Applying neural fashion layers...'}</p>
+                  <p className="animate-pulse text-[13px] font-bold text-indigo-400">{generationStatus}</p>
+                  <p className="text-[10px] text-gray-500">{generationStatus.includes('Intent') ? 'Creative directive 정리 중...' : 'Fashion layers 적용 중...'}</p>
                 </div>
               </div>
             ) : result ? (
@@ -315,40 +320,41 @@ export default function App() {
                 </div>
               </>
             ) : (
-              <div className="h-full flex items-center justify-center opacity-10 font-bold uppercase tracking-[0.3em] text-[10px]">Awaiting Signal</div>
+              <div className="flex h-full items-center justify-center text-[13px] font-medium text-gray-700">생성 결과가 여기에 표시됩니다</div>
             )}
           </div>
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-[14px] font-black">Ai Generated Midjourney V7</h3>
+              <h3 className="text-xl font-bold text-white">5. Ai Generated Midjourney V7</h3>
               {result && !isPromptLoading && !mjPrompt && (
                 <button
                   id="generate-prompt-btn"
                   onClick={handleGeneratePrompt}
-                  className="bg-zinc-800 hover:bg-zinc-700 text-[11px] font-bold py-2 px-4 rounded-lg border border-zinc-700 transition-colors"
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-[11px] font-bold text-gray-300 transition-colors hover:border-indigo-500/30 hover:bg-white/[0.06]"
                 >
                   프롬프트 생성하기
                 </button>
               )}
             </div>
-            <div className="bg-[#020617] border border-zinc-900 rounded-xl p-6 relative">
+            <div className="relative rounded-xl border border-indigo-500/10 bg-[#020617] p-6">
               <div className="flex justify-end mb-4 h-9">
                 {mjPrompt && (
                   <button
                     onClick={() => { navigator.clipboard.writeText(fullMJ); setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }}
-                    className="w-[110px] h-full bg-[#19ad55] rounded-lg text-[12px] font-bold transition-all active:scale-95"
+                    className="h-full w-[110px] rounded-lg bg-white text-[12px] font-bold text-black transition-all hover:bg-gray-200 active:scale-95"
                   >
                     {copySuccess ? "Copied!" : "Copy Prompt"}
                   </button>
                 )}
               </div>
-              <pre className="text-[12px] text-zinc-300 font-mono whitespace-pre-wrap leading-relaxed min-h-[60px]">
+              <pre className="min-h-[60px] whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-gray-300">
                 {isPromptLoading ? "Analyzing visual data..." : fullMJ || (result ? "Click generate button to create prompt." : "Awaiting results...")}
               </pre>
             </div>
           </div>
         </section>
+        </div>
       </main>
 
       {/* Fullscreen Enlarge Modal */}
