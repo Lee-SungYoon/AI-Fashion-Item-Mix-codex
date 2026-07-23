@@ -1,139 +1,37 @@
-
-import { GoogleGenAI, GenerateContentResponse, HarmCategory, HarmBlockThreshold } from "@google/genai";
-
-const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key is missing.");
-  return new GoogleGenAI({ apiKey });
+type ApiErrorBody = {
+  error?: string;
 };
 
-const DEFAULT_SAFETY_SETTINGS = [
-  {
-    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-    threshold: HarmBlockThreshold.BLOCK_NONE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-    threshold: HarmBlockThreshold.BLOCK_NONE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-    threshold: HarmBlockThreshold.BLOCK_NONE,
-  },
-  {
-    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-    threshold: HarmBlockThreshold.BLOCK_NONE,
-  },
-];
+async function requestJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
 
-async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
-  try {
-    return await fn();
-  } catch (error: any) {
-    const errorMsg = error.message || "";
-    if (retries > 0 && (errorMsg.includes("429") || errorMsg.includes("RESOURCE_EXHAUSTED"))) {
-      console.log(`Quota hit, retrying in ${delay / 1000}s... (${retries} left)`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return withRetry(fn, retries - 1, delay * 1.5);
-    }
-    throw error;
+  const payload = await response.json().catch(() => ({})) as ApiErrorBody;
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Request failed.');
   }
-}
 
-function getImagePart(dataUrl: string) {
-  const parts = dataUrl.split(';');
-  const mimeType = parts[0].split(':')[1];
-  const data = dataUrl.split(',')[1];
-  return { inlineData: { mimeType, data } };
+  return payload as T;
 }
 
 export async function analyzeImage(base64Data: string, type: string): Promise<string> {
-  const ai = getAIClient();
-  const imagePart = getImagePart(base64Data);
-
-  const prompt = `Act as a world-class fashion analyst. Provide an ultra-detailed technical description of this ${type} reference.
-
-  If type is 'pose': Focus exclusively on the body's skeletal alignment, limb positioning, weight distribution, and the specific angle of the torso and shoulders.
-  If type is 'face': Focus on facial geometry, eye shape, skin texture, specific hair styling, and the exact emotional micro-expression.
-  If type is 'clothing': Focus on the material properties, weave, specific color values, hardware, and how the garment hangs.
-
-  Be technical and precise.`;
-
-  return withRetry(async () => {
-    const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: { parts: [imagePart, { text: prompt }] },
-      config: { temperature: 0.1, safetySettings: DEFAULT_SAFETY_SETTINGS }
-    });
-    return response.text || "No description.";
+  const result = await requestJson<{ description: string }>('/api/analyze', {
+    image: base64Data,
+    type,
   });
-}
-
-/**
- * Stage 1: Strategic Synthesis of Vision
- */
-async function synthesizeEditorialVision(params: {
-  userPrompt: string;
-  faceDesc?: string;
-  poseDesc?: string;
-  clothingItems: { description: string; type: string }[];
-}): Promise<string> {
-  const ai = getAIClient();
-
-  const analysisPrompt = `
-    Act as a Master Fashion Creative Director. You are preparing a technical brief for a high-end 2K image synthesis engine.
-    Your goal is to perfectly blend identity, posture, and wardrobe into a single cinematic shot.
-
-    INPUT DATA:
-    1. TARGET IDENTITY (Face/Hair): ${params.faceDesc || 'Maintain exact features and expression from Face Reference.'}
-    2. TARGET STRUCTURE (Pose/Stance): ${params.poseDesc || 'Adopt the exact body geometry and skeletal pose from Pose Reference.'}
-    3. TARGET WARDROBE (Items): ${params.clothingItems.map(c => `[${c.type}: ${c.description}]`).join('; ')}
-    4. ARTISTIC CONTEXT (User Intent): "${params.userPrompt || 'Professional high-fashion studio editorial.'}"
-
-    INSTRUCTIONS FOR THE BRIEF:
-    - DECOUPLE & RECOMBINE: Explicitly instruct the engine to take ONLY the body pose from the Pose Reference and ONLY the facial identity from the Face Reference.
-    - MATERIAL FIDELITY: Describe how the specific clothing items interact with the body's stance (e.g., "The fabric of the ${params.clothingItems[0]?.type || 'garment'} should drape realistically according to the weight distribution of the pose").
-    - CINEMATIC LIGHTING: Based on the User Intent, define a lighting scheme (e.g., "Dramatic chiaroscuro", "High-key studio", "Golden hour rim lighting") that emphasizes the textures of the clothes and the contours of the pose.
-    - BACKGROUND & MOOD: Fully realize the environment requested in the User Intent.
-
-    Return ONLY the final consolidated technical prompt for image generation.
-  `;
-
-  return withRetry(async () => {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: analysisPrompt,
-      config: {
-        temperature: 0.7,
-        safetySettings: DEFAULT_SAFETY_SETTINGS
-      }
-    });
-    return response.text || params.userPrompt;
-  });
+  return result.description;
 }
 
 export async function generateMidjourneyPromptFromImage(imageUrl: string): Promise<{ positive: string, negative: string }> {
-  const ai = getAIClient();
-  const imagePart = getImagePart(imageUrl);
-
-  const prompt = `Analyze this generated fashion image. Create a high-quality Midjourney V7 prompt for it.
-  Include photographic details, lighting, and textures.
-  Return as JSON: {"positive": "...", "negative": "..."}.`;
-
-  const result = await withRetry(async () => {
-    const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: { parts: [imagePart, { text: prompt }] },
-      config: { responseMimeType: "application/json", temperature: 0.7, safetySettings: DEFAULT_SAFETY_SETTINGS }
-    });
-    return response.text;
+  return requestJson<{ positive: string, negative: string }>('/api/midjourney-prompt', {
+    imageUrl,
   });
-
-  try {
-    return JSON.parse(result || '{}');
-  } catch (e) {
-    return { positive: "High-end fashion editorial --ar 3:4 --v 7.0", negative: "distorted, low quality" };
-  }
 }
 
 export async function generateFashionMix(params: {
@@ -145,74 +43,17 @@ export async function generateFashionMix(params: {
   additionalPrompt: string;
   onStatusUpdate?: (status: string) => void;
 }): Promise<string> {
-  const ai = getAIClient();
+  params.onStatusUpdate?.('References와 Clothing Items 분석 중...');
 
-  if (params.onStatusUpdate) params.onStatusUpdate("Deconstructing References...");
-  const masterVision = await synthesizeEditorialVision({
-    userPrompt: params.additionalPrompt,
+  const result = await requestJson<{ imageUrl: string }>('/api/generate', {
+    faceImage: params.faceImage,
     faceDesc: params.faceDesc,
+    poseImage: params.poseImage,
     poseDesc: params.poseDesc,
-    clothingItems: params.clothingImages.map(c => ({ description: c.description, type: c.type }))
+    clothingImages: params.clothingImages,
+    additionalPrompt: params.additionalPrompt,
   });
 
-  if (params.onStatusUpdate) params.onStatusUpdate("Synthesizing 2K Masterpiece...");
-
-  const parts: any[] = [
-    { text: `
-      STRICT ARCHITECTURAL DIRECTIVE:
-      You are generating a 2K resolution professional fashion editorial.
-      You must follow these rules with absolute precision:
-
-      1. POSE & AESTHETIC FOUNDATION: Analyze the 'BODY STRUCTURE REFERENCE' image. This is your master reference for:
-         - EXACT body skeletal alignment, limb orientation, and torso angle.
-         - LIGHTING setup (direction, intensity, shadows).
-         - TONE & MOOD (color grading, grain, overall aesthetic atmosphere).
-         Apply this exact physical stance and lighting/tonal atmosphere to the final output.
-
-      2. IDENTITY INTEGRATION: Analyze the 'IDENTITY REFERENCE' image. Reconstruct the EXACT facial features, bone structure, skin tone, eye shape, and specific hair styling onto the model while maintaining the perspective and lighting derived from Rule 1.
-
-      3. CLOTHING RECONSTRUCTION & LAYERING: Render all attached 'CLOTHING ITEM' images (Outerwear, Tops, Bottoms, Shoes, Accessories) onto the model.
-         - Ensure items are layered naturally (e.g., jackets over tops, tucked or untucked as appropriate).
-         - Maintain original colors, fabric textures, branding/hardware, and how the fabric flows on the specific pose body.
-
-      4. SCENE EXECUTION: ${masterVision}
-
-      The final output must be photorealistic, high-end, and indistinguishable from a real fashion magazine shoot. Focus on perfection in face, pose, and lighting fidelity.
-    ` }
-  ];
-
-  // Provide references with clear labels for the model
-  if (params.faceImage) {
-    parts.push({ text: "IDENTITY REFERENCE (Face/Hair):" });
-    parts.push(getImagePart(params.faceImage));
-  }
-  if (params.poseImage) {
-    parts.push({ text: "BODY STRUCTURE REFERENCE (Pose/Stance):" });
-    parts.push(getImagePart(params.poseImage));
-  }
-
-  params.clothingImages.forEach((img, index) => {
-    parts.push({ text: `CLOTHING ITEM ${index + 1} (${img.type}):` });
-    parts.push(getImagePart(img.data));
-  });
-
-  return withRetry(async () => {
-    const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-image-preview',
-      contents: { parts },
-      config: {
-        imageConfig: {
-          aspectRatio: "3:4",
-          imageSize: "2K"
-        }
-      }
-    });
-
-    if (!response.candidates?.[0]?.content?.parts) throw new Error("Generation failed - logic conflict or safety block.");
-
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-    }
-    throw new Error("No image data returned from synthesis engine.");
-  });
+  params.onStatusUpdate?.('2K 패션 에디토리얼 합성 완료');
+  return result.imageUrl;
 }

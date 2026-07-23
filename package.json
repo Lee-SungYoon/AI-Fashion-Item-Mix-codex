@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node server.mjs --dev",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "node server.mjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

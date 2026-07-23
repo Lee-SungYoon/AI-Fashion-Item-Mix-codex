@@ -1,6 +1,6 @@
 # AI Fashion / Item Mix
 
-얼굴/헤어, 포즈, 의류 아이템 이미지를 조합해 고품질 패션 에디토리얼 이미지를 생성하는 React 기반 AI 스타일링 도구입니다. Gemini 이미지 모델을 사용해 각 레퍼런스 이미지를 분석하고, 사용자가 입력한 분위기나 배경 프롬프트를 반영해 3:4 비율의 2K 패션 이미지를 합성합니다.
+얼굴/헤어, 포즈, 의류 아이템 이미지를 조합해 고품질 패션 에디토리얼 이미지를 생성하는 React 기반 AI 스타일링 도구입니다. 업로드된 References 이미지는 얼굴/헤어와 포즈 일관성을 유지하는 기준으로 분석하고, Clothing Items 이미지는 소재, 색상, 실루엣, 디테일을 정밀 분석한 뒤 하나의 3:4 비율 2K 패션 이미지로 합성합니다.
 
 ## 주요 기능
 
@@ -10,6 +10,8 @@
 - 추가 프롬프트를 반영한 패션 에디토리얼 이미지 생성
 - 생성 결과 PNG 다운로드
 - 생성 이미지 기반 Midjourney V7 프롬프트 생성 및 복사
+- 서버 프록시 기반 API 호출로 브라우저 번들 내 API 키 노출 방지
+- PNG, JPG, WEBP 업로드 타입 및 20MB 크기 제한
 
 ## 기술 스택
 
@@ -23,22 +25,28 @@
 
 ```bash
 npm install
-cp .env.example .env
+cp .env.example .env.local
 npm run dev
 ```
 
-`.env` 파일에 Gemini API 키를 입력합니다.
+`.env.local` 파일에 Gemini API 키를 입력합니다. `.env.local`은 Git에 커밋되지 않습니다.
 
 ```bash
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
-개발 서버는 기본적으로 `http://localhost:3000`에서 실행됩니다.
+개발 서버는 기본적으로 `http://localhost:3004`에서 실행됩니다. 프론트엔드와 API 프록시가 같은 서버에서 동작하므로 API 키는 서버 환경 변수로만 사용됩니다.
 
 ## 빌드
 
 ```bash
 npm run build
+```
+
+## 프로덕션 미리보기
+
+```bash
+npm run preview
 ```
 
 ## 타입 검사

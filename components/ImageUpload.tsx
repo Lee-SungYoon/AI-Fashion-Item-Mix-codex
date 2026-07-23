@@ -30,7 +30,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ id, label, data, description,
         onDrop={(e) => { e.preventDefault(); setIsDragging(false); const file = e.dataTransfer.files?.[0]; if (file) onUpload(id, file); }}
       >
         <label className="absolute inset-0 cursor-pointer">
-          <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+          <input type="file" className="hidden" accept="image/png,image/jpeg,image/webp" onChange={handleFileChange} />
         </label>
         {data ? (
           <>

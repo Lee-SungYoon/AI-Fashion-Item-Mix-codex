@@ -17,6 +17,9 @@ const CLOTHING_SLOTS: ImageSlot[] = [
   { id: 'accessory', label: '악세서리', data: null, description: '', isProcessing: false },
 ];
 
+const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
   <h2 className="text-xl font-bold text-white">{children}</h2>
 );
@@ -43,15 +46,7 @@ export default function App() {
   }, [errorMsg]);
 
   useEffect(() => {
-    const checkApiKey = async () => {
-      if (window.aistudio) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        setHasApiKey(hasKey);
-      } else {
-        setHasApiKey(true); // Fallback if not in AI Studio environment
-      }
-    };
-    checkApiKey();
+    setHasApiKey(true);
   }, []);
 
   const handleOpenSelectKey = async () => {
@@ -71,6 +66,15 @@ export default function App() {
   };
 
   const handleUpload = async (id: ImageSlotType, file: File) => {
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      setErrorMsg('PNG, JPG, WEBP 이미지만 업로드할 수 있습니다.');
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setErrorMsg('이미지 용량은 20MB 이하만 업로드할 수 있습니다.');
+      return;
+    }
+
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = async () => {
