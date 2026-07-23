@@ -33,7 +33,7 @@ export default function App() {
   const [generationStatus, setGenerationStatus] = useState('Synthesizing Editorial');
   const [isPromptLoading, setIsPromptLoading] = useState(false);
   const [result, setResult] = useState<GenerationResult | null>(null);
-  const [mjPrompt, setMjPrompt] = useState<{ positive: string, negative: string } | null>(null);
+  const [mjPrompt, setMjPrompt] = useState<{ positive: string } | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
@@ -134,6 +134,16 @@ export default function App() {
       });
 
       setResult({ imageUrl, aspectRatio: '3:4' });
+      setIsPromptLoading(true);
+      try {
+        const mjp = await generateMidjourneyPromptFromImage(imageUrl);
+        setMjPrompt(mjp);
+      } catch (promptErr: any) {
+        const promptMessage = parseErrorMessage(promptErr);
+        setErrorMsg(`미드저니 프롬프트 생성 실패: ${promptMessage || '결과 이미지를 분석할 수 없습니다.'}`);
+      } finally {
+        setIsPromptLoading(false);
+      }
     } catch (err: any) {
       const message = parseErrorMessage(err);
       if (message.includes('RESOURCE_EXHAUSTED')) {
@@ -176,7 +186,7 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  const fullMJ = mjPrompt ? `${mjPrompt.positive} --no ${mjPrompt.negative}` : "";
+  const fullMJ = mjPrompt?.positive || "";
 
   if (hasApiKey === false) {
     return (
@@ -331,7 +341,7 @@ export default function App() {
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white">5. Ai Generated Midjourney V7</h3>
+              <h3 className="text-xl font-bold text-white">5. AI Generated Midjourney</h3>
               {result && !isPromptLoading && !mjPrompt && (
                 <button
                   id="generate-prompt-btn"
@@ -354,7 +364,7 @@ export default function App() {
                 )}
               </div>
               <pre className="min-h-[60px] whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-gray-300">
-                {isPromptLoading ? "Analyzing visual data..." : fullMJ || (result ? "Click generate button to create prompt." : "Awaiting results...")}
+                {isPromptLoading ? "4번 생성 결과 이미지를 분석해 미드저니용 프롬프트를 만드는 중..." : fullMJ || (result ? "결과 이미지 기준 프롬프트를 생성할 수 있습니다." : "Awaiting results...")}
               </pre>
             </div>
           </div>

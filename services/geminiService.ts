@@ -28,8 +28,8 @@ export async function analyzeImage(base64Data: string, type: string): Promise<st
   return result.description;
 }
 
-export async function generateMidjourneyPromptFromImage(imageUrl: string): Promise<{ positive: string, negative: string }> {
-  return requestJson<{ positive: string, negative: string }>('/api/midjourney-prompt', {
+export async function generateMidjourneyPromptFromImage(imageUrl: string): Promise<{ positive: string }> {
+  return requestJson<{ positive: string }>('/api/midjourney-prompt', {
     imageUrl,
   });
 }

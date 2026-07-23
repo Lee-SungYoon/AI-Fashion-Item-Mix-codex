@@ -12,7 +12,6 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_PROMPT_CHARS = 2000;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const IMAGE_SLOT_TYPES = new Set(['face', 'pose', 'outer', 'top', 'bottom', 'shoes', 'accessory', 'accessory2']);
-
 loadEnvFile('.env.local');
 loadEnvFile('.env');
 
@@ -277,9 +276,21 @@ async function generateFashionMix(params) {
 async function generateMidjourneyPromptFromImage(imageUrl) {
   const imagePart = getImagePart(imageUrl);
   const ai = getAIClient();
-  const prompt = `Analyze this generated fashion image. Create a high-quality Midjourney V7 prompt for it.
-  Include photographic details, lighting, and textures.
-  Return as JSON: {"positive": "...", "negative": "..."}.`;
+  const prompt = `Analyze the attached Section 4 generated result image with maximum visual fidelity.
+
+  Create one Midjourney-ready positive prompt that would recreate an image as close as possible to this exact result.
+
+  Requirements:
+  - Describe the subject identity, face, hairstyle, expression, pose, body angle, wardrobe, accessories, fabric textures, colors, layering, lighting, background, camera angle, lens feel, composition, editorial styling, and mood visible in the image.
+  - Prioritize concrete visual evidence from the image over generic fashion words.
+  - Preserve the 3:4 fashion editorial composition.
+  - Do not add Midjourney version parameters or version-related parameters.
+  - Do not include a negative prompt.
+  - Do not include --no.
+  - Do not mention that this is an uploaded image, generated image, reference image, or analysis.
+
+  Return only valid JSON with this exact shape:
+  {"positive":"..."}`;
 
   const result = await withRetry(async () => {
     const response = await ai.models.generateContent({
@@ -291,10 +302,27 @@ async function generateMidjourneyPromptFromImage(imageUrl) {
   });
 
   try {
-    return JSON.parse(result || '{}');
+    const parsed = JSON.parse(result || '{}');
+    return {
+      positive: stripMidjourneyParams(validateText(parsed.positive, 4000) || 'High-end fashion editorial, photorealistic model, detailed wardrobe, studio lighting'),
+    };
   } catch {
-    return { positive: 'High-end fashion editorial --ar 3:4 --v 7.0', negative: 'distorted, low quality' };
+    return {
+      positive: stripMidjourneyParams('High-end fashion editorial, photorealistic model, detailed wardrobe, precise pose, cinematic lighting'),
+    };
   }
+}
+
+function stripMidjourneyParams(prompt) {
+  return prompt
+    .replace(/\s--style\s+raw\b/g, '')
+    .replace(/\s--v\s+\S+/g, '')
+    .replace(/\s--ar\s+\S+/g, '')
+    .replace(/\s--hd\b/g, '')
+    .replace(/\s--raw\b/g, '')
+    .replace(/\s--q\s+\S+/g, '')
+    .replace(/\s--no\b.*$/g, '')
+    .trim();
 }
 
 async function handleApi(req, res) {
