@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ImageSlot, ImageSlotType, GenerationResult } from './types';
-import { analyzeImage, generateFashionMix, generateMidjourneyPromptFromImage } from './services/geminiService';
+import { analyzeImage, generateFashionMix, generateMidjourneyPromptFromImage } from './services/openaiService';
 import ImageUpload from './components/ImageUpload';
 
 const INITIAL_SLOTS: ImageSlot[] = [
@@ -40,22 +40,16 @@ export default function App() {
 
   useEffect(() => {
     const checkApiKey = async () => {
-      if (window.aistudio) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        setHasApiKey(hasKey);
-      } else {
-        setHasApiKey(true); // Fallback if not in AI Studio environment
+      try {
+        const response = await fetch('/api/health');
+        const health = await response.json();
+        setHasApiKey(Boolean(health.ok));
+      } catch {
+        setHasApiKey(false);
       }
     };
     checkApiKey();
   }, []);
-
-  const handleOpenSelectKey = async () => {
-    if (window.aistudio) {
-      await window.aistudio.openSelectKey();
-      setHasApiKey(true);
-    }
-  };
 
   const parseErrorMessage = (err: any) => {
     let message = err.message || '';
@@ -176,19 +170,16 @@ export default function App() {
           <div className="space-y-4">
             <h1 className="text-4xl font-black tracking-tighter uppercase">API Key Required</h1>
             <p className="text-zinc-400 text-sm leading-relaxed">
-              To use the high-quality Nano Banana 2 (Gemini 3.1 Flash Image) model, you must select a paid API key from your Google Cloud project.
+              OpenAI API 서버 연결이 필요합니다. 로컬 서버에 <code className="text-indigo-300">OPENAI_API_KEY</code>를 설정한 뒤 다시 시작해주세요.
             </p>
             <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 text-xs text-indigo-300 text-left">
               <p className="font-bold mb-1">Important Note:</p>
-              <p>Please ensure your project has billing enabled. You can find more information in the <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-200 transition-colors">billing documentation</a>.</p>
+              <p>API 키는 브라우저에 노출되지 않으며 서버 프록시에서만 사용됩니다. OpenAI Platform의 API 결제와 권한을 확인해주세요.</p>
             </div>
           </div>
-          <button 
-            onClick={handleOpenSelectKey}
-            className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 rounded-2xl font-black text-lg transition-all active:scale-95 shadow-[0_0_30px_rgba(79,70,229,0.3)]"
-          >
-            Select API Key
-          </button>
+          <p className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-left text-xs leading-relaxed text-zinc-400">
+            Add <code className="text-indigo-300">OPENAI_API_KEY</code> to <code className="text-indigo-300">.env.local</code>, then run <code className="text-indigo-300">npm run dev</code> again.
+          </p>
         </div>
       </div>
     );
@@ -227,6 +218,13 @@ export default function App() {
         >
           Reset Session
         </button>
+        <a
+          href="/design-system.md"
+          download="ai-fashion-item-mix-design-system.md"
+          className="absolute left-8 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest text-zinc-700 hover:text-indigo-400 transition-colors"
+        >
+          Download Design System
+        </a>
       </header>
 
       <main className="max-w-[1800px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-0">
