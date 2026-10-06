@@ -28,7 +28,7 @@ export default function App() {
   const [mjPrompt, setMjPrompt] = useState<{ positive: string, negative: string } | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [apiStatus, setApiStatus] = useState<'checking' | 'ready' | 'missing-key' | 'offline'>('checking');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -43,9 +43,9 @@ export default function App() {
       try {
         const response = await fetch('/api/health');
         const health = await response.json();
-        setHasApiKey(Boolean(health.ok));
+        setApiStatus(health.ok ? 'ready' : 'missing-key');
       } catch {
-        setHasApiKey(false);
+        setApiStatus('offline');
       }
     };
     checkApiKey();
@@ -61,6 +61,14 @@ export default function App() {
   };
 
   const handleUpload = async (id: ImageSlotType, file: File) => {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setErrorMsg('PNG, JPEG 또는 WebP 이미지만 업로드할 수 있습니다.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setErrorMsg('이미지 파일은 20MB 이하로 업로드해 주세요.');
+      return;
+    }
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = async () => {
@@ -163,29 +171,35 @@ export default function App() {
 
   const fullMJ = mjPrompt ? `${mjPrompt.positive} --no ${mjPrompt.negative}` : "";
 
-  if (hasApiKey === false) {
+  if (apiStatus !== 'ready' && apiStatus !== 'checking') {
     return (
       <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-8 text-center">
         <div className="max-w-md space-y-8">
           <div className="space-y-4">
-            <h1 className="text-4xl font-black tracking-tighter uppercase">API Key Required</h1>
+            <h1 className="text-4xl font-black tracking-tighter uppercase">
+              {apiStatus === 'offline' ? 'Server Unavailable' : 'API Key Required'}
+            </h1>
             <p className="text-zinc-400 text-sm leading-relaxed">
-              OpenAI API 서버 연결이 필요합니다. 로컬 서버에 <code className="text-indigo-300">OPENAI_API_KEY</code>를 설정한 뒤 다시 시작해주세요.
+              {apiStatus === 'offline'
+                ? '로컬 OpenAI 프록시 서버에 연결할 수 없습니다. npm run dev로 서버를 실행한 뒤 다시 시도해주세요.'
+                : <>OpenAI API 서버에 <code className="text-indigo-300">OPENAI_API_KEY</code>가 필요합니다. 서버 환경에 키를 설정한 뒤 다시 시작해주세요.</>}
             </p>
             <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 text-xs text-indigo-300 text-left">
               <p className="font-bold mb-1">Important Note:</p>
               <p>API 키는 브라우저에 노출되지 않으며 서버 프록시에서만 사용됩니다. OpenAI Platform의 API 결제와 권한을 확인해주세요.</p>
             </div>
           </div>
-          <p className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-left text-xs leading-relaxed text-zinc-400">
-            Add <code className="text-indigo-300">OPENAI_API_KEY</code> to <code className="text-indigo-300">.env.local</code>, then run <code className="text-indigo-300">npm run dev</code> again.
-          </p>
+          {apiStatus === 'missing-key' && (
+            <p className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-left text-xs leading-relaxed text-zinc-400">
+              Add <code className="text-indigo-300">OPENAI_API_KEY</code> to <code className="text-indigo-300">.env.local</code>, then run <code className="text-indigo-300">npm run dev</code> again.
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
-  if (hasApiKey === null) {
+  if (apiStatus === 'checking') {
     return <div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>;
   }
 

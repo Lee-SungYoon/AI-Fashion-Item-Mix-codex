@@ -173,7 +173,7 @@ async function handleApi(req, res) {
 
 const vite = await createViteServer({
   root,
-  server: { middlewareMode: true, hmr: false },
+  server: { middlewareMode: true, hmr: { port: port + 1 } },
   appType: 'spa',
 });
 
